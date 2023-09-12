@@ -2,24 +2,53 @@ import face_recognition
 import urllib.request
 from pymongo import MongoClient
 import cv2
-import customtkinter
-from PIL import Image
+from tkinter import *
+from PIL import Image, ImageTk
+import time
 
-app = customtkinter.CTk()
+app = Tk()
 app.geometry("700x600")
 
 connection_string = "mongodb+srv://mivotoapi:mivotoapi123@mivoto.n4q9rmw.mongodb.net/?retryWrites=true&w=majority"
 client = MongoClient(connection_string)
 db = client.MiVoto
 
-def ingresarPersona(dni, fotoUrl, estadoVoto):
-    document = {"dni": dni, "foto": fotoUrl, "estadoVoto": estadoVoto} 
+cam = cv2.VideoCapture(1)
 
+fotoNoSacada = True
+dniNoIngresado = True
+def borrarPantalla():
+    for widget in app.winfo_children():
+        widget.pack_forget()
+
+def votar():
+    borrarPantalla()
+
+def mostrarMensaje(malo, msg):
+	if malo:
+		mensaje = Label(app, text = msg, text_color='red')
+	else:
+		mensaje = Label(app, text = msg, text_color='green')
+	mensaje.pack(pady= (10,0))
+	app.update()
+	time.sleep(2)
+	mensaje.pack_forget()
+
+def ingresarCandidato(nombreP, nombreC, localidad, politicas):
+    document = {"nombreP": nombreP, "nombreC": nombreC, "localidad": localidad, "politicas":politicas, "cantVotos": 0} 
+    try:
+        collection = db.candidatos
+        collection.insert_one(document)
+    except:
+        print("ocurrio un error")
+
+def ingresarPersona(dni, fotoUrl):
+    document = {"dni": dni, "foto": fotoUrl, "estadoVoto": False} 
     try:
         collection = db.usuario
         collection.insert_one(document)
     except:
-        print("ocurrio un error")
+        print("ocurrio un error")        
 
 def imgPorLink(link):
     urllib.request.urlretrieve(link, "retratoUrl.jpg")
@@ -33,17 +62,19 @@ def compararCarasFotos(img1, img2):
 
     return face_recognition.compare_faces([known_encoding], unknown_encoding)
 
-def sacarFoto(cam):
-    cam_port = cam
-    cam = cv2.VideoCapture(cam_port)
-
+def sacarFotoYComparar():
+    global fotoNoSacada
     result, image = cam.read()
-    
     if result:
         resize = cv2.resize(image, (1920, 1080))
         cv2.imwrite("retratoCam.jpg", resize)
+        imgPorLink(getImgUrlporDNI(dni))
+        if compararCarasFotos("retratoCam.jpg","retratoUrl.jpg"):
+            fotoNoSacada = False
+        else:
+            mostrarMensaje(True, "No se logro confirmar su identidad. Vuelva a sacar la foto")
     else:
-        print("No image detected. Please! try again")
+        mostrarMensaje(True, "No se logro confirmar su identidad. Vuelva a sacar la foto")
 
 def getImgUrlporDNI(dni):
     try:
@@ -52,32 +83,53 @@ def getImgUrlporDNI(dni):
         resp = collection.find(myquery)
         return resp[0]["foto"]
     except:
-        print("An exception occurred 1")
+        return None
 
 dni = 46961189
 fotoUrl = "https://i.imgur.com/XFi08aI.jpg"
 estadoVoto = False
 
+def getCandidatosXLocalidad(loca):
+    listaC=[]
+    collection = db.usuario
+    myquery = { "localidad": loca }
+    listaC = collection.find(myquery)
+    for documento in listaC:
+        documento["cantVotos"] = 0
+    return listaC
 
+def ingresarFoto():
+    image_label = Label(app)
+    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Sacar Foto 📷',height=20,width=30,command=sacarFotoYComparar)
 
-try:
-    dni = int(input("Ingrese su DNI:\n- "))
-    fotoUrl = getImgUrlporDNI(dni)
-    if fotoUrl != None:
-        #sacarFoto(1)
-        imgPorLink(fotoUrl)
-        if(compararCarasFotos("retratoCam.jpg", "retratoUrl.jpg")):
-            print("Identidad verificada")
-    else:
-        print("DNI no encontrado en el padron")
-    
-    #ingresarPersona(dni, fotoUrl, estadoVoto)
-    
-    
-    my_image = customtkinter.CTkImage(light_image=Image.open("retratoCam.jpg"), dark_image=Image.open("retratoCam.jpg"), size=(640, 360))
-    image_label = customtkinter.CTkLabel(app, image=my_image, text="")
+    borrarPantalla()
     image_label.pack()
-except:
-    print("ocurrio un error")
+    botonFoto.pack()
+    while fotoNoSacada:
+        img=cam.read()[1]
+        img1=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+        img= ImageTk.PhotoImage(Image.fromarray(img1))
+        image_label['image']=img
+        app.update()
+    
+    votar()
 
+def ingresarDni():
+    borrarPantalla()
+    global dniNoIngresado
+    def actDni():
+        global dni
+        global dniNoIngresado
+        dni = int(entryDni.get())
+        print(dni)
+        dniNoIngresado = False
+        ingresarFoto()
+
+    entryDni = Entry(app)
+    entryDni.pack()
+    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Ingresar',height=3,width=15,command=actDni,)
+    botonFoto.pack()
+
+
+ingresarDni()
 app.mainloop()
