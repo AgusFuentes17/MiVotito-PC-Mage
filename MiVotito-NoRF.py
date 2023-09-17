@@ -14,7 +14,7 @@ connection_string = "mongodb+srv://mivotoapi:mivotoapi123@mivoto.n4q9rmw.mongodb
 client = MongoClient(connection_string)
 db = client.MiVoto
 
-cam = cv2.VideoCapture(1)
+cam = cv2.VideoCapture(0)
 
 
 fotoNoSacada = True
