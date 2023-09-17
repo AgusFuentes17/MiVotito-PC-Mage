@@ -228,6 +228,7 @@ def verResultados(localidad):
     votosTotal = 0
     long= []
     colores= []
+    lastColor = "#CAD0D6"
 
     for y in candidatos:
         votosTotal += int(y["cantVotos"])
@@ -236,11 +237,16 @@ def verResultados(localidad):
     resto = 100
     
     for x in candidatos:
-        porcentaje = int((x["cantVotos"] *100) / votosTotal)
-        resto = resto - porcentaje
-        long.append(porcentaje)
-        colores.append(x["colorP"])
-        lastColor = x["colorP"]
+        if votosTotal < 0:
+            porcentaje = int((x["cantVotos"] *100) / votosTotal)
+            resto = resto - porcentaje
+            long.append(porcentaje)
+            colores.append(x["colorP"])
+            lastColor = x["colorP"]
+        else:
+            long.append(100)
+            colores.append("#CAD0D6")
+            break
 
     long.append(resto)
     colores.append(lastColor)
@@ -327,7 +333,7 @@ def opcionesAdmin():
         Button(app, text="Ver Padron", command= verPadron).pack(pady=20)
         Button(app, text="Añadir usuario", command= ingresarPersona).pack(pady=20)
 
-def sacarFotoYComparar():
+def sacarFotoYComparar(cam):
     global fotoNoSacada
     result, image = cam.read()
     if result:
@@ -336,6 +342,10 @@ def sacarFotoYComparar():
         imgPorLink(getValorDeUsuario(dni,"foto"),"retratoUrl.jpg")
         if compararCarasFotos("retratoCam.jpg","retratoUrl.jpg"):
             fotoNoSacada = False
+            if esAdmin:
+                opcionesAdmin()
+            else:
+                votarPresidente()
         else:
             mostrarMensaje(True, "No se logro confirmar su identidad. Vuelva a sacar la foto")
     else:
@@ -368,37 +378,66 @@ def mostrarCandidatos(localidad):
         x["cantVotos"] = 0
         crearBotonCandidato(x)
 
-def ingresarFoto(): 
-    image_label = Label(app, height= 360, width= 640)
-    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Sacar Foto 📷',height=5,width=15,command=sacarFotoYComparar)
+def elegirCamara():
+    variable = IntVar(app)
+    variable.set(0)
+    global fotoNoSacada
+
     borrarPantalla()
-    image_label.pack(pady= 20)
-    botonFoto.pack(fill=None, expand=False)
-    while fotoNoSacada:
-        img=cam.read()[1]
-        img1=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
-        img= ImageTk.PhotoImage(Image.fromarray(img1))
-        image_label['image']=img
-        app.update()
+    def c():
+        global fotoNoSacada
+        cam = cv2.VideoCapture(variable.get())
+        fotoNoSacada = True
+        ingresarFoto(cam)
     
-    if esAdmin:
-        opcionesAdmin()
-    else:
-        votarPresidente()
+    fotoNoSacada = False
+    choices = camarasDisponibles()
+
+    w = OptionMenu(app, variable, *choices)
+    w.pack()
+
+    Button(app, text="Aceptar", command= c).pack()
+
+def ingresarFoto(cam):
+    global fotoNoSacada
+
+    borrarPantalla()
+  
+
+    image_label = Label(app, height= 360, width= 640)
+    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Sacar Foto 📷',height=5,width=15,command=lambda:sacarFotoYComparar(cam))
+    
+    image_label.pack(pady= 20)
+    
+    botonFoto.pack(fill=None, expand=False)
+    try:
+        while fotoNoSacada:
+            img=cam.read()[1]
+            img1=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+            img= ImageTk.PhotoImage(Image.fromarray(img1))
+            image_label['image']=img
+            app.update()
+    except:
+        elegirCamara()
+        mostrarMensaje(True, "Hubo un error con la camara intente con otra")
+    
 
 def ingresarDni():
+    
     borrarPantalla()
     def actDni():
         global dni
         global esAdmin
+        global cam
+
         dni = int(entryDni.get())
         if getValorDeUsuario(dni,"foto") != None:
             esAdmin = getValorDeUsuario(dni,"admin")
             if esAdmin:
-                ingresarFoto()
+                ingresarFoto(cam)
             else:
                 if not(getValorDeUsuario(dni,"estadoVoto")):
-                    ingresarFoto()
+                    ingresarFoto(cam)
                 else:
                     mostrarMensaje(True, "Ya se ha registrado un voto con ese DNI")
         else:
