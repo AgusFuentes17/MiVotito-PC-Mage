@@ -25,6 +25,7 @@ candidato = ""
 dni = None
 fotoUrl = "https://i.imgur.com/XFi08aI.jpg"
 estadoVoto = False
+esAdmin = False
 
 def camarasDisponibles():
     is_working = True
@@ -45,7 +46,10 @@ def camarasDisponibles():
 
 def borrarPantalla():
     for widget in app.winfo_children():
-        if widget["text"] != "MiVoto 2023":
+        if isinstance(widget, Label):
+            if widget._name != "titulo":
+                widget.pack_forget()
+        else:
             widget.pack_forget()
     for widget in scroll.winfo_children():
         widget.pack_forget()
@@ -57,6 +61,9 @@ def votarPresidente():
 
     titulo = Label(app, text="Candidatos a Presidente")
     titulo.pack(pady=10)
+
+    sf["width"] = 640
+    sf["height"] = 210
     sf.pack(side="top", expand=0, fill=None)
 
     mostrarCandidatos("Pais")
@@ -70,6 +77,8 @@ def votarGobernador():
 
     titulo = Label(app, text="Candidatos a Gobernador")
     titulo.pack(pady=10)
+    sf["width"] = 640
+    sf["height"] = 210
     sf.pack(side="top", expand=0, fill=None)
 
     collection = db.usuario
@@ -91,13 +100,16 @@ def votarCandidato():
 
     myquery = { "dni": dni }
 
-    if noVoto(dni):
+    if not(getValorDeUsuario(dni,"estadoVoto")):
         newvalues = { "$set": { "estadoVoto": True } }
         collection = db.usuario
         collection.update_one(myquery, newvalues)
         votarGobernador()
     else:
-        ingresarDni()
+        if esAdmin:
+            opcionesAdmin()
+        else:
+            ingresarDni()
 
 def setCandidato(a):
     global botonConfVoto
@@ -117,21 +129,171 @@ def mostrarMensaje(malo, msg):
 	time.sleep(2)
 	mensaje.pack_forget()
 
-def ingresarCandidato(nombreP, nombreC, localidad, politicas, imgLink):
-    document = {"nombreP": nombreP, "nombreC": nombreC, "localidad": localidad, "politicas":politicas,"imgLink": imgLink, "cantVotos": 0} 
-    try:
-        collection = db.candidatos
-        collection.insert_one(document)
-    except:
-        print("ocurrio un error")
+def ingresarCandidato():
+    def ingBD():
+        nombreP = entP.get()
+        nombreC = entC.get()
+        localidad = entLoca.get()
+        politicas = entPol.get()
+        imgLink = entImg.get()
+        colP = entColP.get()
 
-def ingresarPersona(dni, fotoUrl):
-    document = {"dni": dni, "foto": fotoUrl, "estadoVoto": False} 
-    try:
-        collection = db.usuario
-        collection.insert_one(document)
-    except:
-        print("ocurrio un error")        
+        document = {"nombreP": nombreP, "nombreC": nombreC, "localidad": localidad, "politicas":politicas,"imgLink": imgLink,"colorP": colP, "cantVotos": 0} 
+        try:
+            collection = db.candidatos
+            collection.insert_one(document)
+            mostrarMensaje(False,"Se ingreso correctamente")
+            opcionesAdmin()
+        except:
+            print("ocurrio un error")
+    
+    borrarPantalla()
+    Label(app, text= "Nombre del partido").pack()
+    entP= Entry(app)
+    entP.pack()
+    Label(app, text= "Nombre del candidato").pack()
+    entC= Entry(app)
+    entC.pack()
+    Label(app, text= "Localidad").pack()
+    entLoca= Entry(app)
+    entLoca.pack()
+    Label(app, text= "Politicas").pack()
+    entPol= Entry(app)
+    entPol.pack()
+    Label(app, text= "Link de la imagen").pack()
+    entImg= Entry(app)
+    entImg.pack()
+    Label(app, text= "Color del partido (HEX)").pack()
+    entColP= Entry(app)
+    entColP.pack()
+    
+    Button(app, text="Crear candidato", command= ingBD).pack(pady=20)
+    Button(app, text="Cancelar", command= opcionesAdmin).pack(pady=20)
+
+def ingresarPersona():
+    inEsAdmin = False
+    def ingBD():
+        inDni = int(entDni.get())
+        inFotoUrl = entFoto.get()
+        loca = entLoca.get()
+        document = {"dni": inDni, "foto": inFotoUrl, "estadoVoto": False, "local" : loca, "admin": inEsAdmin} 
+        try:
+            collection = db.usuario
+            collection.insert_one(document)
+            mostrarMensaje(False,"Se ingreso correctamente")
+            opcionesAdmin()
+            
+        except:
+            print("ocurrio un error")
+    
+    borrarPantalla()
+    Label(app, text= "DNI").pack()
+    entDni= Entry(app)
+    entDni.pack()
+    Label(app, text= "Link de la foto").pack()
+    entFoto= Entry(app)
+    entFoto.pack()
+    Label(app, text= "Localidad").pack()
+    entLoca= Entry(app)
+    entLoca.pack()
+    
+    entEsAdmin = Checkbutton(app, text = "Admin", variable = inEsAdmin, onvalue = True, offvalue = False, height=3)
+    entEsAdmin.pack()
+    
+    Button(app, text="Crear usuario", command= ingBD).pack(pady=20)
+    Button(app, text="Cancelar", command= opcionesAdmin).pack(pady=20)
+
+def verResultados(localidad):
+    borrarPantalla()
+
+    def graficoTorta(PieV,colV):
+        canvas = Canvas(app,width=200,height=200)
+        canvas.pack(side="top", pady=10)
+        st = 0
+        coord = 0, 0, 200, 200
+        for val,col in zip(PieV,colV):    
+            canvas.create_arc(coord,start=st,extent = val*3.6,fill=col,outline=col)
+            st = st + val*3.6 
+
+    def crearBarraCandidato(candidato):
+        global scroll
+        colorP= candidato["colorP"]
+        Boleta = LabelFrame(scroll,bg=colorP)
+        nombreCand = Label(Boleta, text=candidato["nombreC"]+": "+ str(candidato["cantVotos"])+ " votos", bg= colorP)
+        Boleta.pack(fill=None,expand=False,side="top")
+        nombreCand.pack(side="left")
+
+    collection = db.candidatos
+    myquery = { "localidad": localidad }
+    candidatos = collection.find(myquery)
+    votosTotal = 0
+    long= []
+    colores= []
+
+    for y in candidatos:
+        votosTotal += int(y["cantVotos"])
+
+    candidatos = collection.find(myquery)
+    resto = 100
+    
+    for x in candidatos:
+        porcentaje = int((x["cantVotos"] *100) / votosTotal)
+        resto = resto - porcentaje
+        long.append(porcentaje)
+        colores.append(x["colorP"])
+        lastColor = x["colorP"]
+
+    long.append(resto)
+    colores.append(lastColor)
+    graficoTorta(long, colores)
+
+    candidatos = collection.find(myquery)
+
+    sf["width"] = 200
+    sf["height"] = 250
+    sf.pack(expand=0, fill=None)
+
+    for x in candidatos:
+        crearBarraCandidato(x)
+    
+    Button(app, text= "Volver", command= opcionesAdmin).pack(pady= 20)
+
+def verPadron():
+    borrarPantalla()
+
+    def crearBarraCandidato(usuario):
+        global scroll
+        colorP = "Red"
+        estadoVoto = " no voto"
+        if usuario["estadoVoto"]:
+            colorP = "Green"
+            estadoVoto = " voto"
+        Boleta = LabelFrame(scroll,bg=colorP)
+        nombreUsu = Label(Boleta, text=str(usuario["dni"]) + estadoVoto, bg= colorP)
+        Boleta.pack(fill=None,expand=False,side="top")
+        nombreUsu.pack(side="left")
+
+    collection = db.usuario
+
+    filtroVoto = { "estadoVoto": True }
+    filtroNoVoto = { "estadoVoto": False }
+
+    cantVotos = collection.count_documents(filtroVoto)
+    cantNoVoto = collection.count_documents(filtroNoVoto)
+
+    Label(app, text= "Cantidad de votantes: " + str(cantVotos), fg="Green").pack(pady= 10)
+    Label(app, text= "Cantidad de no votantes: " + str(cantNoVoto), fg="Red").pack()
+    Label(app, text= "Lista:").pack(pady=20)
+    sf["width"] = 150
+    sf["height"] = 250
+    sf.pack(expand=0, fill=None)
+    
+    candidatos = collection.find()
+
+    for x in candidatos:
+        crearBarraCandidato(x)
+    
+    Button(app, text= "Volver", command= opcionesAdmin).pack(pady= 20)
 
 def imgPorLink(link,nombre):
     urllib.request.urlretrieve(link, nombre)
@@ -145,14 +307,31 @@ def compararCarasFotos(img1, img2):
 
     return face_recognition.compare_faces([known_encoding], unknown_encoding)
 
-def noVoto(dni):
+def getValorDeUsuario(dni, valor):
     try:
         collection = db.usuario
         myquery = { "dni": dni }
         resp = collection.find(myquery)
-        return not(resp[0]["estadoVoto"])
+        return resp[0][valor]
     except:
         return None
+
+def opcionesAdmin():
+    borrarPantalla()
+    def elegirLocalidad():
+        borrarPantalla()
+        Label(app, text= "Ingrese la localidad de la cual quiere ver los votos").pack()
+        entLoc = Entry(app)
+        entLoc.pack()
+        Button(app, text="Aceptar", command= lambda: verResultados(entLoc.get())).pack()
+        
+    if not(getValorDeUsuario(dni, "estadoVoto")):
+        votarPresidente()
+    else:
+        Button(app, text="Ver Resultados", command= elegirLocalidad).pack(pady=20)
+        Button(app, text="Añadir candidato", command= ingresarCandidato).pack(pady=20)
+        Button(app, text="Ver Padron", command= verPadron).pack(pady=20)
+        Button(app, text="Añadir usuario", command= ingresarPersona).pack(pady=20)
 
 def sacarFotoYComparar():
     global fotoNoSacada
@@ -160,22 +339,13 @@ def sacarFotoYComparar():
     if result:
         resize = cv2.resize(image, (1920, 1080))
         cv2.imwrite("retratoCam.jpg", resize)
-        imgPorLink(getImgUrlporDNI(dni),"retratoUrl.jpg")
+        imgPorLink(getValorDeUsuario(dni,"foto"),"retratoUrl.jpg")
         if compararCarasFotos("retratoCam.jpg","retratoUrl.jpg"):
             fotoNoSacada = False
         else:
             mostrarMensaje(True, "No se logro confirmar su identidad. Vuelva a sacar la foto")
     else:
         mostrarMensaje(True, "No se logro confirmar su identidad. Vuelva a sacar la foto")
-
-def getImgUrlporDNI(dni):
-    try:
-        collection = db.usuario
-        myquery = { "dni": dni }
-        resp = collection.find(myquery)
-        return resp[0]["foto"]
-    except:
-        return None
 
 def crearBotonCandidato(x):
     global scroll
@@ -204,13 +374,12 @@ def mostrarCandidatos(localidad):
         x["cantVotos"] = 0
         crearBotonCandidato(x)
 
-def ingresarFoto():
-    image_label = Label(app)
-    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Sacar Foto 📷',height=20,width=30,command=sacarFotoYComparar)
-
+def ingresarFoto(): 
+    image_label = Label(app, height= 360, width= 640)
+    botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Sacar Foto 📷',height=5,width=15,command=sacarFotoYComparar)
     borrarPantalla()
-    image_label.pack()
-    botonFoto.pack(fill=None)
+    image_label.pack(pady= 20)
+    botonFoto.pack(fill=None, expand=False)
     while fotoNoSacada:
         img=cam.read()[1]
         img1=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
@@ -218,28 +387,37 @@ def ingresarFoto():
         image_label['image']=img
         app.update()
     
-    votarPresidente()
+    if esAdmin:
+        opcionesAdmin()
+    else:
+        votarPresidente()
 
 def ingresarDni():
     borrarPantalla()
     def actDni():
         global dni
+        global esAdmin
         dni = int(entryDni.get())
-        if getImgUrlporDNI(dni) != None:
-            if noVoto(dni):  
+        if getValorDeUsuario(dni,"foto") != None:
+            esAdmin = getValorDeUsuario(dni,"admin")
+            if esAdmin:
                 ingresarFoto()
             else:
-                mostrarMensaje(True, "Ya se ha registrado un voto con ese DNI")
+                if not(getValorDeUsuario(dni,"estadoVoto")):
+                    ingresarFoto()
+                else:
+                    mostrarMensaje(True, "Ya se ha registrado un voto con ese DNI")
         else:
             mostrarMensaje(True, "El dni no fue encontrado en el padron")
-
+    labelDni = Label(app,text="Ingrese el dni").pack(pady=20)
     entryDni = Entry(app)
     entryDni.pack()
     botonFoto=Button(app,bg='green',fg='white',activebackground='white',activeforeground='green',text='Ingresar',height=3,width=15,command=actDni,)
-    botonFoto.pack(fill=None)
+    botonFoto.pack(fill=None, pady=20)
 
 botonConfVoto = Button(app,bg='gray',fg='white',activebackground='white',activeforeground='green',text='Elije un candidato',height=5,width=15,command=votarCandidato)
 sf = ScrolledFrame(app, width=640, height=210)
+labelTitulo = Label(app, text="MiVoto", bg= "#05deff", fg= "white",name="titulo", height=1, font="Fixedsys 25").pack(pady=0,expand= False, fill= X, side="top")
 
 sf.bind_arrow_keys(app)
 sf.bind_scroll_wheel(app)
