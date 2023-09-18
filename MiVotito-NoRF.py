@@ -1,3 +1,4 @@
+from pydoc import doc
 import urllib.request
 from pymongo import MongoClient
 import cv2
@@ -110,12 +111,19 @@ def votarCandidato():
         else:
             ingresarDni()
 
-def setCandidato(a):
+    mostrarMensaje(False, "Se registro el voto")
+
+def setCandidato(a, b):
+   
     global botonConfVoto
     global candidato
+    global lblProp
+
     candidato = a
     botonConfVoto["text"] = "Votar a " + a
     botonConfVoto["bg"] = "green"
+    lblProp["text"] = "Propuestas: " + b 
+    
     app.update()
 
 def mostrarMensaje(malo, msg):
@@ -170,12 +178,12 @@ def ingresarCandidato():
     Button(app, text="Cancelar", command= opcionesAdmin).pack(pady=20)
 
 def ingresarPersona():
-    inEsAdmin = False
+    inEsAdmin = BooleanVar(app)
     def ingBD():
         inDni = int(entDni.get())
         inFotoUrl = entFoto.get()
         loca = entLoca.get()
-        document = {"dni": inDni, "foto": inFotoUrl, "estadoVoto": False, "local" : loca, "admin": inEsAdmin} 
+        document = {"dni": inDni, "foto": inFotoUrl, "estadoVoto": False, "local" : loca, "admin": inEsAdmin.get()} 
         try:
             collection = db.usuario
             collection.insert_one(document)
@@ -237,7 +245,7 @@ def verResultados(localidad):
     resto = 100
     
     for x in candidatos:
-        if votosTotal < 0:
+        if votosTotal > 0:
             porcentaje = int((x["cantVotos"] *100) / votosTotal)
             resto = resto - porcentaje
             long.append(porcentaje)
@@ -266,6 +274,17 @@ def verResultados(localidad):
 def verPadron():
     borrarPantalla()
 
+    def buscarDNI():
+        voto =  getValorDeUsuario(int(entDni.get()),"estadoVoto")
+        print(voto)
+        if voto:
+            resp["text"] = "La persona con ese DNI ha votado"
+            resp["fg"] = "Green"
+        else:
+            resp["text"] = "La persona con ese DNI NO ha votado"
+            resp["fg"] = "Red"
+
+
     def crearBarraCandidato(usuario):
         global scroll
         colorP = "Red"
@@ -291,13 +310,20 @@ def verPadron():
     Label(app, text= "Lista:").pack(pady=20)
     sf["width"] = 150
     sf["height"] = 250
-    sf.pack(expand=0, fill=None)
+    sf.pack(expand=0, fill=None, pady= 10)
     
     candidatos = collection.find()
 
     for x in candidatos:
         crearBarraCandidato(x)
     
+    Label(app, text="Buscar por DNI").pack()
+    entDni = Entry(app)
+    entDni.pack()
+    Button(app, text= "Buscar", command= buscarDNI).pack()
+    resp = Label(app, text="")
+    resp.pack()
+
     Button(app, text= "Volver", command= opcionesAdmin).pack(pady= 20)
 
 def imgPorLink(link,nombre):
@@ -320,11 +346,27 @@ def opcionesAdmin():
     borrarPantalla()
     def elegirLocalidad():
         borrarPantalla()
-        Label(app, text= "Ingrese la localidad de la cual quiere ver los votos").pack()
-        entLoc = Entry(app)
-        entLoc.pack()
-        Button(app, text="Aceptar", command= lambda: verResultados(entLoc.get())).pack()
+
+        def listarLocal():
+            lista = []
+            collection = db.candidatos
+            documentos = collection.find()
+            for x in documentos:
+                esDiferente = True
+                for y in lista:
+                    if x["localidad"] == y:
+                        esDiferente = False
+                if esDiferente:
+                    lista.append(x["localidad"])
+            return lista
         
+        Label(app, text= "Elija la localidad de la cual quiere ver los votos").pack()
+        variable = StringVar(app)
+        variable.set("Pais")
+        w = OptionMenu(app, variable, *listarLocal())
+        w.pack()
+        Button(app, text="Aceptar", command= lambda: verResultados(variable.get())).pack()
+    
     if not(getValorDeUsuario(dni, "estadoVoto")):
         votarPresidente()
     else:
@@ -362,7 +404,7 @@ def crearBotonCandidato(x):
     img= Image.open(nombreArch)
     resized_img = img.resize((150,150))
     img_obj = ImageTk.PhotoImage(resized_img)
-    b1=Button(Boleta,text= x, image=img_obj, command= lambda : setCandidato(x["nombreC"]))
+    b1=Button(Boleta,text= x, image=img_obj, command= lambda : setCandidato(x["nombreC"], x["politicas"]))
     b1.image= img_obj
     Boleta.pack(side="left",fill=None,expand=True, padx=5)
     nombrePart.pack()
@@ -449,6 +491,7 @@ def ingresarDni():
     botonFoto.pack(fill=None, pady=20)
 
 botonConfVoto = Button(app,bg='gray',fg='white',activebackground='white',activeforeground='green',text='Elije un candidato',height=5,width=15,command=votarCandidato)
+lblProp = Button(app,text='Propuesta:')
 sf = ScrolledFrame(app, width=640, height=210)
 labelTitulo = Label(app, text="MiVoto", bg= "#05deff", fg= "white",name="titulo", height=1, font="Fixedsys 25").pack(pady=0,expand= False, fill= X, side="top")
 
@@ -456,7 +499,7 @@ sf.bind_arrow_keys(app)
 sf.bind_scroll_wheel(app)
 scroll = sf.display_widget(Frame)
 
-ingresarDni()
+verPadron()
 
 #ingresarCandidato("Juntos por el Cambio","Jorge Macri","CABA","Es el primo de macri","https://www.lanacion.com.ar/resizer/3Q-QqSwmaLzE10MMg3dMxY3PHwU=/420x280/filters:format(webp):quality(70)/cloudfront-us-east-1.images.arcpublishing.com/lanacionar/UVSJ4WZ625HRLMSNO64W62U2YE.JPG")
 #ingresarCandidato("Union por la Patria","Sergio Massa","Pais","Fundir el pais","https://pbs.twimg.com/profile_images/1639607611036188675/ER1KQEWf_400x400.jpg")
